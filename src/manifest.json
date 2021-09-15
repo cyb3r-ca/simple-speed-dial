@@ -22,6 +22,9 @@
     "tabs",
     "<all_urls>"
   ],
+  "chrome_url_overrides": {
+    "newtab": "index.html"
+  },
   "background": {
     "scripts": [
       "js/lib/browser-polyfill.min.js",
