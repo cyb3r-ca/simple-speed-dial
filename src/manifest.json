@@ -22,12 +22,6 @@
     "tabs",
     "<all_urls>"
   ],
-  "chrome_url_overrides": {
-    "newtab": "index.html"
-  },
-  "chrome_settings_overrides": {
-    "homepage": "index.html"
-  },
   "background": {
     "scripts": [
       "js/lib/browser-polyfill.min.js",
@@ -42,11 +36,5 @@
     },
     "default_title": "Add to Speed Dial"
   },
-  "web_accessible_resources": ["icons/icon128.png"],
-  "browser_specific_settings": {
-    "gecko": {
-      "id": "yet_another_speed_dial@conceptualspace.net",
-      "strict_min_version": "59.0"
-    }
-  }
+  "web_accessible_resources": ["icons/icon128.png"]
 }
