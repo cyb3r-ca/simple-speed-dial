@@ -1,4 +1,5 @@
-// yet another speed dial
+// simple speed dial
+// some copyright 2021 seraf@cyb3r.ca
 // copyright 2019 dev@conceptualspace.net
 // absolutely no warranty is expressed or implied
 
