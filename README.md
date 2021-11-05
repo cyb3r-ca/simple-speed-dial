@@ -1,13 +1,13 @@
 <h1>
-<sub>
+<!-- sub>
 <img src="https://raw.githubusercontent.com/conceptualspace/yet-another-speed-dial/master/src/icons/icon32.png" height="32" width="32">
-</sub>
-Yet Another Speed Dial
+</sub -->
+Simple Speed Dial
 </h1>
 
-<h1>
+<!-- h1>
 <a href='https://addons.mozilla.org/en-US/firefox/addon/yet-another-speed-dial/'><img alt='Get it for Firefox' src='https://github.com/conceptualspace/yet-another-speed-dial/raw/master/assets/badges/ff-badge.png'/></a> <a href='https://chrome.google.com/webstore/detail/yet-another-speed-dial/imohnlganmafcmidafklgkgfgaagiohn'><img alt='Get it for Chrome' src='https://github.com/conceptualspace/yet-another-speed-dial/raw/master/assets/badges/chrome-badge.png'/></a> <a href='https://microsoftedge.microsoft.com/addons/detail/kachajgmekhiajhbbfpfhbmonmpnpiee'><img src='https://github.com/conceptualspace/yet-another-speed-dial/raw/master/assets/badges/microsoft-badge.png' alt='English badge' style='width: 166px; height: 60px;'/></a>
-</h1>
+</h1 -->
 
 A modern, cross-browser speed dial that respects your privacy, inspired by Opera
 
@@ -33,13 +33,13 @@ A modern, cross-browser speed dial that respects your privacy, inspired by Opera
 Yes! Just right-click the speed dial and select Edit.
 
 ### One of my site thumbnails disappeared?
-YASD loads thumbnails using the Open Graph standard. This keeps those thumbnails up to date automatically, but if a website removes the image it may no longer load in YASD. To fetch new images, simply right-click the dial and select "Refresh thumbnails".
+SSD loads thumbnails using the Open Graph standard. This keeps those thumbnails up to date automatically, but if a website removes the image it may no longer load in SSD. To fetch new images, simply right-click the dial and select "Refresh thumbnails".
 
-### Why does YASD require the "access your data for all websites" permission?
-This is required for YASD to capture an image of the website for the thumbnail. **YASD accesses absolutely no other data for any reason whatsoever**. These two features (visual thumbnails and user privacy) were the primary motivation for creating YASD. Note, YASD still works if you deny this permission, just without capturing thumbnails. You can find the YASD privacy policy here: https://conceptualspace.net/privacy.md
+### Why does SSD require the "access your data for all websites" permission?
+This is required for SSD to capture an image of the website for the thumbnail. **SSD accesses absolutely no other data for any reason whatsoever**. These two features (visual thumbnails and user privacy) were the primary motivation for creating SSD. Note, SSD still works if you deny this permission, just without capturing thumbnails.
 
-### Why is YASD showing CPU usage in the Chrome task manager?
-While the actual CPU usage is very low (confirm using your OS task manager), some cycles are used to elimate jankiness. YASD uses a high performance rendering engine (GSAP) to keep user ineractions and animations smooth. The usage is 0 when YASD is not in focus.
+### Why is SSD showing CPU usage in the Chrome task manager?
+While the actual CPU usage is very low (confirm using your OS task manager), some cycles are used to elimate jankiness. SSD uses a high performance rendering engine (GSAP) to keep user ineractions and animations smooth. The usage is 0 when SSD is not in focus.
 
 ### Can I open speed dial links in Firefox Containers?
 Yes, just use <kbd>Shift</kbd> + <kbd>Right-click</kbd> on the speed dial to access the default context menu.
@@ -51,5 +51,5 @@ This is a bug in Firefox. You can nag Mozilla to fix it here: https://bugzilla.m
 
 ## building for chrome vs firefox
 
-chrome: remove `chrome_settings_overrides` and `browser_specific_settings` manifest keys  
+edge/chrome: remove `chrome_settings_overrides` and `browser_specific_settings` manifest keys  
 firefox: no changes are required
