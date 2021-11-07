@@ -26,6 +26,7 @@ let cache = {};
 let ready = false;
 let firstRun = true;
 let tripwire = 0;
+let tripwireTimestamp = 0;
 
 function getSpeedDialId() {
     browser.bookmarks.search({title: 'Speed Dial', url: undefined}).then(result => {
@@ -119,7 +120,7 @@ function getThumbnails(url, manualRefresh=false) {
             .then(function(images) {
                 if (images) {
                     for (let image of images) {
-                        thumbnails.push(image);
+                        image && thumbnails.push(image);
                     }
                 }
                 return getScreenshot(url, manualRefresh)
@@ -274,7 +275,7 @@ function getScreenshot(url, manualRefresh=false) {
                         .then(imageUri => {
                             resolve(imageUri, fetchedTitle);
                         });
-                } else if (tripwire < 2 || manualRefresh) {
+                } else if ( ( tripwire < 2 && Date.now() - tripwireTimestamp > 3000 ) || manualRefresh) {
                     // open tab, capture screenshot, and close
                     // todo: complete loaded status sometimes !== actually loaded
                     let tabID = null;
@@ -344,7 +345,7 @@ function getLogo(url) {
             if (response.status === 200) {
                 resolve(logoUrl);
             } else {
-                resolve([]);
+                resolve(null);
             }
         });
     });
@@ -465,6 +466,7 @@ function changeBookmark(id, info) {
                             // todo: there might be a race condition here for bookmarks created via context menu
                             refreshOpen();
                             tripwire--;
+                            tripwireTimestamp = Date.now();
                         } else {
                             getThumbnails(bookmark[0].url).then((fetchedTitle) => {
                                 pushToCache(bookmark[0].url).then(() => {
@@ -477,6 +479,7 @@ function changeBookmark(id, info) {
                                         refreshOpen()
                                     }
                                     tripwire--;
+                                    tripwireTimestamp = Date.now();
                                 })
                             })
                         }
@@ -492,9 +495,22 @@ function changeBookmark(id, info) {
                 }
                 // new folder
                 folderIds.push(id);
-                refreshOpen()
-                tripwire--;
+                // recurse through the folder and get thumbnails
+                browser.bookmarks.getChildren(id).then(children => {
+                    if (children.length) {
+                        for (let child of children) {
+                            changeBookmark(child.id)
+                        }
+                    } else {
+                        refreshOpen()
+                    }
+                    tripwire--;
+                    tripwireTimestamp = Date.now();
+                })
             }
+        } else {
+            // todo, handle yasd bookmarks that are moved outside of yasd but not deleted...
+            //console.log(bookmark[0], info)
         }
     });
 }
