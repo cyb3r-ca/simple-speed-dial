@@ -6,6 +6,7 @@
     --clock: none;
     --settings: none;
     --columns: 100%;
+    --image-scaling: cover;
 }
 
 html, body {
@@ -25,6 +26,13 @@ body {
 h1 {
     font-weight: lighter;
     font-size: xx-large;
+}
+
+.helpText {
+    font-size: 1.25rem;
+    font-weight: 300;
+    margin-block-start: 0.5em;
+    margin-block-end: 0.5em;
 }
 
 /* total width */
@@ -76,8 +84,8 @@ h1 {
     display: none;
     justify-content: center;
     align-items: center;
-    text-align: left;
-    padding: 100px;
+    text-align: center;
+    padding: 80px 100px;
     color: #ffffff;
     position: fixed;
     width: 100%;
@@ -131,7 +139,7 @@ h1 {
     background-origin: content-box;
     background-position: 50%;
     background-repeat: no-repeat;
-    background-size: cover;
+    background-size: var(--image-scaling);
 }
 
 .tile-title {
@@ -348,7 +356,12 @@ input:focus {
 }
 
 .fc-arrows .fc-next.fc-is-active .fc-icon, .fc-arrows .fc-prev.fc-is-active .fc-icon {
+    background-color: rgba(17, 17, 17, 0.9);
     color: #ccc;
+}
+
+.fc-arrows .fc-prev.fc-is-active:hover .fc-icon, .fc-arrows .fc-next.fc-is-active:hover .fc-icon {
+    color: #fff;
 }
 
 .sidenav {

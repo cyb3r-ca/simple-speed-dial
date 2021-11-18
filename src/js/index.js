@@ -58,6 +58,7 @@ const imgPreview = document.getElementById("preview");
 const wallPaperEnabled = document.getElementById("wallpaper");
 const previewContainer = document.getElementById("previewContainer");
 const largeTilesInput = document.getElementById("largeTiles");
+const scaleImagesInput = document.getElementById("scaleImages");
 const showTitlesInput = document.getElementById("showTitles");
 const showCreateDialInput = document.getElementById("showCreateDial");
 const showFoldersInput = document.getElementById("showFolders");
@@ -94,6 +95,7 @@ let layoutFolder = false;
 let boxes = [];
 let hourCycle = 'h12';
 const locale = navigator.language;
+const imageRatio = 1.54;
 
 const debounce = (func, delay= 500, immediate=false) => {
     let inDebounce
@@ -350,12 +352,13 @@ function printBookmarks(bookmarks, parentId) {
             } else if (bookmark.url && bookmark.url.startsWith("http")) {
                 // restricted to valid url schemes for security reasons -- http and https. see #26
                 // in ff bookmark "separators" can be created that have "data:" as the url.
-                let thumbUrl = null;
+                let thumbBg, thumbUrl = null;
                 if (cache[bookmark.url]) {
                     // if the image is a blob:
                     //iconURL = URL.createObjectURL(result.icon);
                     //iconURL = result.icon;
-                    thumbUrl = cache[bookmark.url];
+                    thumbUrl = cache[bookmark.url][0];
+                    thumbBg = cache[bookmark.url][1]
                 } else {
                     thumbUrl = "../img/default.png";
                 }
@@ -369,7 +372,11 @@ function printBookmarks(bookmarks, parentId) {
 
                 let content = document.createElement('div');
                 content.classList.add('tile-content');
-                content.style.backgroundImage = "url(" + thumbUrl + ")";
+                if (thumbBg) {
+                    content.style.backgroundImage = `url('${thumbUrl}'), ${thumbBg}`;
+                } else {
+                    content.style.backgroundImage = `url('${thumbUrl}')`;
+                }
 
                 let title = document.createElement('div');
                 title.classList.add('tile-title');
@@ -441,6 +448,8 @@ function printBookmarks(bookmarks, parentId) {
             ghostClass: 'selected',
             dragClass: 'dragging',
             filter: ".createDial",
+            delay: 500, // fixes #40
+            delayOnTouchOnly: true,
             onMove: onMoveHandler,
             onEnd: onEndHandler,
             store: {
@@ -562,6 +571,7 @@ async function buildModal(url, title) {
         let index = images.thumbIndex;
         let imgDiv = document.createElement('div');
         let img = document.createElement('img');
+        img.crossOrigin = 'Anonymous';
         img.setAttribute('src', images.thumbnails[index]);
         imgDiv.appendChild(img);
         newCarousel.appendChild(imgDiv);
@@ -569,6 +579,7 @@ async function buildModal(url, title) {
             if (i !== index) {
                 let imgDiv = document.createElement('div');
                 let img = document.createElement('img');
+                img.crossOrigin = 'Anonymous';
                 img.setAttribute('src', image);
                 imgDiv.appendChild(img);
                 newCarousel.appendChild(imgDiv);
@@ -600,6 +611,64 @@ function createDial() {
     });
 }
 
+function offscreenCanvasShim(w, h) {
+    try {
+        return new OffscreenCanvas(w, h);
+    } catch (err) {
+        // offscreencanvas not supported in ff
+        let canvas = document.createElement('canvas');
+        canvas.width  = w;
+        canvas.height = h;
+        return canvas;
+    }
+}
+
+// calculate the bg color of a given image
+// todo: punt this to a worker
+function getBgColor(image) {
+    let imgWidth = image.naturalWidth;
+    let imgHeight = image.naturalHeight;
+    let sx, sy, direction;
+
+    if ((imgWidth / imgHeight) > imageRatio) {
+        // image is wide; sample top and bottom
+        sy = imgHeight - 1
+        sx = 0;
+        direction = 'bottom'
+
+    } else {
+        // sample left and right
+        sx = imgWidth - 1
+        sy = 0;
+        direction = 'right'
+    }
+
+    let rgba = [0, 0, 0, 0];
+    let rgbaa = [0, 0, 0, 0];
+    let canvas = offscreenCanvasShim(imgWidth, imgHeight);
+    // {willReadFrequently:true} readback optimization improves perf for getImageData and toDataURL
+    // todo add to other contexts
+    let context = canvas.getContext('2d', {willReadFrequently:true});
+    context.drawImage(image, 0, 0);
+
+    // get the top left pixel, cheap and easy
+    // todo: if its equally performant, sample all corners and return the mode
+    let pixelA = context.getImageData(0, 0, 1, 1);
+    rgba[0] = pixelA.data[0];
+    rgba[1] = pixelA.data[1];
+    rgba[2] = pixelA.data[2];
+    rgba[3] = pixelA.data[3] / 255; // imageData alpha value is 0..255 instead of 0..1
+
+    let pixelB = context.getImageData(sx, sy, 1, 1);
+    rgbaa[0] = pixelB.data[0];
+    rgbaa[1] = pixelB.data[1];
+    rgbaa[2] = pixelB.data[2];
+    rgbaa[3] = pixelB.data[3] / 255; // imageData alpha value is 0..255 instead of 0..1
+
+    //return rgba;
+    return `linear-gradient(to ${direction}, rgba(${rgba[0]},${rgba[1]},${rgba[2]},${rgba[3]}) 50%, rgba(${rgbaa[0]},${rgbaa[1]},${rgbaa[2]},${rgbaa[3]}) 50%)`;
+}
+
 function saveBookmarkSettings() {
     // todo: cleanup this abomination when im not on drugs
     let title = modalTitle.value;
@@ -608,11 +677,14 @@ function saveBookmarkSettings() {
     let selectedImageSrc = null;
     let thumbIndex = 0;
     let imageNodes = document.getElementsByClassName('fc-slide');
+    let bgColor = null;
 
     let customCarousel = document.getElementById('customCarousel');
     if (customCarousel) {
         selectedImageSrc = customCarousel.children[0].src;
-        targetNode.children[0].children[0].style.backgroundImage = `url('${selectedImageSrc}')`;
+        bgColor = getBgColor(customCarousel.children[0]);
+        targetNode.children[0].children[0].style.backgroundImage = `url('${selectedImageSrc}'), ${bgColor}`;
+        //targetNode.children[0].children[0].style.backgroundColor = bgColor;
         browser.storage.local.get(url)
             .then(result => {
                 let thumbnails = [];
@@ -624,7 +696,7 @@ function saveBookmarkSettings() {
                     thumbnails.push(selectedImageSrc);
                     thumbIndex = 0;
                 }
-                    browser.storage.local.set({[newUrl]: {thumbnails, thumbIndex}}).then(result => {
+                    browser.storage.local.set({[newUrl]: {thumbnails, thumbIndex, bgColor}}).then(result => {
                         tabMessagePort.postMessage({updateCache: true, url: newUrl, i: thumbIndex});
                         if (title !== targetTileTitle) {
                             updateTitle()
@@ -638,11 +710,14 @@ function saveBookmarkSettings() {
                 // sometimes the carousel puts images inside a <figure class="fc-image"> elem
                 if (node.children[0].className === "fc-image") {
                     selectedImageSrc = node.children[0].children[0].src;
+                    bgColor = getBgColor(node.children[0].children[0]);
                 } else {
                     selectedImageSrc = node.children[0].src;
+                    bgColor = getBgColor(node.children[0]);
                 }
                 // update tile
-                targetNode.children[0].children[0].style.backgroundImage = `url('${selectedImageSrc}')`;
+                targetNode.children[0].children[0].style.backgroundImage = `url('${selectedImageSrc}'), ${bgColor}`;
+                //targetNode.children[0].children[0].style.backgroundColor = bgColor;
                 break;
             }
         }
@@ -653,7 +728,7 @@ function saveBookmarkSettings() {
                     let thumbnails = result[url].thumbnails;
                     thumbIndex = thumbnails.indexOf(selectedImageSrc);
                     if (thumbIndex >= 0) {
-                        browser.storage.local.set({[newUrl]: {thumbnails, thumbIndex}}).then(result => {
+                        browser.storage.local.set({[newUrl]: {thumbnails, thumbIndex, bgColor}}).then(result => {
                             tabMessagePort.postMessage({updateCache: true, url: newUrl, i: thumbIndex});
                             if (title !== targetTileTitle || url !== newUrl) {
                                 updateTitle()
@@ -718,9 +793,10 @@ const animate = debounce(() => {
     //let boxes = [];
     //let windowSize = window.innerWidth;
 
+    TweenLite.set(nodes, {lazy: true, x: "+=0"});
+
     for (let i = 0; i < total; i++) {
         let node = nodes[i];
-        TweenLite.set(node, {x: "+=0"});
         const transform = node._gsTransform;
         const x = node.offsetLeft;
         const y = node.offsetTop;
@@ -731,7 +807,7 @@ const animate = debounce(() => {
     //observer.observe(bookmarksContainer, observerConfig);
 
     // todo: move this
-    // todo: why did i debounce animate but not layout?
+    // todo: why did i debounce animate but not layout? (because we want tiles to move immediately as manually resizing window)
     // TweenLite.ticker.addEventListener("tick", layout);
     window.onresize = layout;
 
@@ -795,7 +871,7 @@ function resizeBackground(dataURI) {
                 let width = Math.round(this.width * ratio);
 
                 let canvas = document.createElement('canvas');
-                let ctx = canvas.getContext('2d');
+                let ctx = canvas.getContext('2d', {willReadFrequently:true});
                 ctx.imageSmoothingEnabled = true;
 
                 canvas.width = width;
@@ -830,7 +906,7 @@ function resizeThumb(dataURI) {
                 let width = Math.round(this.width * ratio);
 
                 let canvas = document.createElement('canvas');
-                let ctx = canvas.getContext('2d');
+                let ctx = canvas.getContext('2d', {willReadFrequently:true});
                 ctx.imageSmoothingEnabled = true;
 
                 canvas.width = width;
@@ -968,6 +1044,14 @@ function applySettings() {
             document.documentElement.style.setProperty('--color', settings.textColor);
         }
 
+        if (settings.scaleImages) {
+            document.documentElement.style.setProperty('--image-scaling', 'contain');
+            //document.documentElement.style.setProperty('--image-width', '140px');
+        } else {
+            document.documentElement.style.setProperty('--image-scaling', 'cover');
+            //document.documentElement.style.setProperty('--image-width', '188px');
+        }
+
         if (settings.maxCols && settings.maxCols !== "100") {
             document.documentElement.style.setProperty('--columns', settings.maxCols * 220 + "px")
         } else {
@@ -1016,6 +1100,7 @@ function applySettings() {
         showTitlesInput.checked = settings.showTitles;
         showCreateDialInput.checked = settings.showAddSite;
         largeTilesInput.checked = settings.largeTiles;
+        scaleImagesInput.checked = settings.scaleImages;
         showFoldersInput.checked = settings.showFolders;
         showClockInput.checked = settings.showClock;
         showSettingsBtnInput.checked = settings.showSettingsBtn;
@@ -1041,6 +1126,7 @@ function saveSettings() {
     settings.showTitles = showTitlesInput.checked;
     settings.showAddSite = showCreateDialInput.checked;
     settings.largeTiles = largeTilesInput.checked;
+    settings.scaleImages = scaleImagesInput.checked;
     settings.showFolders = showFoldersInput.checked;
     settings.showClock = showClock.checked;
     settings.showSettingsBtn = showSettingsBtn.checked;
@@ -1085,7 +1171,7 @@ document.addEventListener("contextmenu", function (e) {
         targetFolderName = e.target.textContent;
         showContextMenu(folderMenu, e.pageY, e.pageX);
         return false;
-    } else if (e.target.className === 'folders' || e.target.className === 'container' || e.target.className === 'tileContainer' || e.target.className === 'default-content') {
+    } else if (e.target.className === 'folders' || e.target.className === 'container' || e.target.className === 'tileContainer' || e.target.className === 'default-content' || e.target.className === 'default-content helpText') {
         showContextMenu(settingsMenu, e.pageY, e.pageX);
         return false;
     }
@@ -1113,7 +1199,9 @@ window.addEventListener("mousedown", e => {
         return;
     }
     switch (e.target.className) {
+        // todo: invert this
         case 'default-content':
+        case 'default-content helpText':
         case 'tile-content':
         case 'tile-title':
         case 'container':
@@ -1250,6 +1338,10 @@ textColor_picker.onchange = function () {
 };
 
 showTitlesInput.oninput = function(e) {
+    saveSettings()
+}
+
+scaleImagesInput.oninput = function(e) {
     saveSettings()
 }
 
@@ -1455,6 +1547,8 @@ function init() {
         ghostClass: 'selected',
         dragClass: 'dragging', // todo: confirm this only applies when forceFallback is used
         filter: ".createDial",
+        delay: 500, // fixes #40
+        delayOnTouchOnly: true,
         // todo: copy same onmove logic from folders
         onMove: onMoveHandler,
         onEnd: onEndHandler,

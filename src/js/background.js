@@ -13,6 +13,7 @@ let defaults = {
     wallpaperSrc: 'img/bg.jpg',
     backgroundColor: '#111111',
     largeTiles: true,
+    scaleImages: false,
     showTitles: true,
     showAddSite: true,
     showFolders: true,
@@ -27,6 +28,7 @@ let ready = false;
 let firstRun = true;
 let tripwire = 0;
 let tripwireTimestamp = 0;
+const imageRatio = 1.54;
 
 function getSpeedDialId() {
     browser.bookmarks.search({title: 'Speed Dial', url: undefined}).then(result => {
@@ -115,6 +117,7 @@ function convertUrlToAbsolute(origin, path) {
 function getThumbnails(url, manualRefresh=false) {
     let thumbnails = [];
     let fetchedTitle = '';
+    let bgColor = null;
     return new Promise(function(resolve, reject) {
         getOgImage(url)
             .then(function(images) {
@@ -125,14 +128,15 @@ function getThumbnails(url, manualRefresh=false) {
                 }
                 return getScreenshot(url, manualRefresh)
             })
-            .then(function(screenshot, title) {
-                if (title) {
-                    fetchedTitle = title
+            .then(function(result) {
+                if (result) {
+                    if (result.title) {
+                        fetchedTitle = result.title
+                    }
+                    if (result.screenshot) {
+                        return resizeThumb(result.screenshot)
+                    }
                 }
-                if (screenshot) {
-                    return resizeThumb(screenshot)
-                }
-
             })
             .then(function(result) {
                 if (result) {
@@ -144,7 +148,13 @@ function getThumbnails(url, manualRefresh=false) {
                 if (result) {
                     thumbnails.push(result);
                 }
-                return saveThumbnails(url, thumbnails)
+                return getBgColor(thumbnails[0])
+            })
+            .then(function(result) {
+                if (result) {
+                    bgColor = result;
+                }
+                return saveThumbnails(url, thumbnails, bgColor)
             })
             .then(() => resolve(fetchedTitle))
             .catch(error => console.log(error));
@@ -238,7 +248,7 @@ function getOgImage(url) {
     });
 }
 
-function saveThumbnails(url, images) {
+function saveThumbnails(url, images, bgColor) {
     return new Promise(function(resolve, reject) {
         let thumbnails = [];
         browser.storage.local.get(url)
@@ -250,7 +260,7 @@ function saveThumbnails(url, images) {
                     thumbnails.push(images);
                 }
                 thumbnails = thumbnails.flat();
-                browser.storage.local.set({[url]:{thumbnails, thumbIndex: 0}})
+                browser.storage.local.set({[url]:{thumbnails, thumbIndex: 0, bgColor}})
                     .then(() => resolve());
             });
     });
@@ -265,6 +275,7 @@ function getScreenshot(url, manualRefresh=false) {
                 if (tabs && tabs[0]) {
                     return browser.tabs.get(tabs[0].id)
                 } else {
+                    // todo: restructure this
                     resolve([])
                 }
             })
@@ -273,7 +284,7 @@ function getScreenshot(url, manualRefresh=false) {
                     let fetchedTitle = tab.title ? tab.title : '';
                     browser.tabs.captureVisibleTab()
                         .then(imageUri => {
-                            resolve(imageUri, fetchedTitle);
+                            resolve({screenshot: imageUri, title: fetchedTitle});
                         });
                 } else if ( ( tripwire < 2 && Date.now() - tripwireTimestamp > 3000 ) || manualRefresh) {
                     // open tab, capture screenshot, and close
@@ -289,7 +300,7 @@ function getScreenshot(url, manualRefresh=false) {
                                         browser.tabs.captureVisibleTab().then(imageUri => {
                                             browser.tabs.onUpdated.removeListener(handleUpdatedTab);
                                             browser.tabs.remove(tabID);
-                                            resolve(imageUri, fetchedTitle);
+                                            resolve({screenshot: imageUri, title: fetchedTitle});
                                         }, (err) => {
                                             console.log(err)
                                             // carry on like it aint no tang
@@ -302,7 +313,7 @@ function getScreenshot(url, manualRefresh=false) {
                                     browser.tabs.captureTab(tabID).then(imageUri => {
                                         browser.tabs.onUpdated.removeListener(handleUpdatedTab);
                                         browser.tabs.remove(tabID);
-                                        resolve(imageUri, fetchedTitle);
+                                        resolve({screenshot: imageUri, title: fetchedTitle});
                                     }, (err) => {
                                         console.log(err);
                                         resolve(null);
@@ -361,7 +372,7 @@ function resizeThumb(dataURI) {
                     let canvas = document.createElement('canvas');
                     let ctx = canvas.getContext('2d');
                     let canvas2 = document.createElement('canvas');
-                    let ctx2 = canvas2.getContext('2d');
+                    let ctx2 = canvas2.getContext('2d', {willReadFrequently:true});
                     ctx2.imageSmoothingEnabled = true;
                     ctx2.imageSmoothingQuality = "high";
 
@@ -394,6 +405,75 @@ function resizeThumb(dataURI) {
     });
 }
 
+function offscreenCanvasShim(w=1, h=1) {
+    try {
+        return new OffscreenCanvas(w, h);
+    } catch (err) {
+        // offscreencanvas not supported in ff
+        let canvas = document.createElement('canvas');
+        canvas.width  = w;
+        canvas.height = h;
+        return canvas;
+    }
+}
+
+// calculate the bg color of a given image
+// todo: punt this to a worker
+// todo: export functions resused in index.js
+function getBgColor(image) {
+    return new Promise(function(resolve, reject) {
+        let img = new Image();
+        img.onload = function () {
+            let imgWidth = img.naturalWidth;
+            let imgHeight = img.naturalHeight;
+            let sx, sy, direction;
+
+            if ((imgWidth / imgHeight) > imageRatio) {
+                // image is wide; sample top and bottom
+                sy = imgHeight - 1
+                sx = 0;
+                direction = 'bottom'
+
+            } else {
+                // sample left and right
+                sx = imgWidth - 1
+                sy = 0;
+                direction = 'right'
+            }
+
+            let rgba = [0, 0, 0, 0];
+            let rgbaa = [0, 0, 0, 0];
+            let canvas = offscreenCanvasShim(imgWidth, imgHeight);
+            // {willReadFrequently:true} readback optimization improves perf for getImageData and toDataURL
+            // todo add to other contexts
+            let context = canvas.getContext('2d', {willReadFrequently:true});
+            context.drawImage(img, 0, 0);
+
+            // get the top left pixel, cheap and easy
+            // todo: if its equally performant, sample all corners and return the mode
+            let pixelA = context.getImageData(0, 0, 1, 1);
+            rgba[0] = pixelA.data[0];
+            rgba[1] = pixelA.data[1];
+            rgba[2] = pixelA.data[2];
+            rgba[3] = pixelA.data[3] / 255; // imageData alpha value is 0..255 instead of 0..1
+
+            let pixelB = context.getImageData(sx, sy, 1, 1);
+            rgbaa[0] = pixelB.data[0];
+            rgbaa[1] = pixelB.data[1];
+            rgbaa[2] = pixelB.data[2];
+            rgbaa[3] = pixelB.data[3] / 255; // imageData alpha value is 0..255 instead of 0..1
+
+            //return rgba;
+            //console.log(direction, rgba, rgbaa);
+            resolve(`linear-gradient(to ${direction}, rgba(${rgba[0]},${rgba[1]},${rgba[2]},${rgba[3]}) 50%, rgba(${rgbaa[0]},${rgbaa[1]},${rgbaa[2]},${rgbaa[3]}) 50%)`);
+        }
+        img.onerror = function() {
+            resolve();
+        };
+        img.crossOrigin = "Anonymous";
+        img.src = image
+    });
+}
 
 function removeBookmark(id, bookmarkInfo) {
     if (bookmarkInfo.node.url && (bookmarkInfo.parentId === speedDialId || folderIds.indexOf(bookmarkInfo.parentId) !== -1)) {
@@ -407,7 +487,7 @@ function pushToCache(url, i=0) {
     return new Promise(function(resolve, reject) {
         browser.storage.local.get(url).then(result => {
             if (result[url]) {
-                cache[url] = result[url].thumbnails[i];
+                cache[url] = [result[url].thumbnails[i], result[url].bgColor];
             }
             resolve();
         });
@@ -553,7 +633,7 @@ function handleInstalled(details) {
         // perform any migrations here...
         if (details.previousVersion && details.previousVersion === '1.14.8') {
             const url = chrome.runtime.getURL("updated.html");
-            chrome.tabs.create({ url });
+            chrome.tabs.create({ url, active: false });
         }
     }
 }
@@ -581,10 +661,11 @@ function init() {
             }
             const entries = Object.entries(result);
             for (let e of entries) {
+                //console.log(e);
                 // todo: filter folder ids
                 if (e[0] !== "settings" && e[1].thumbnails) {
                     let index = e[1].thumbIndex;
-                    cache[e[0]] = e[1].thumbnails[index];
+                    cache[e[0]] = [e[1].thumbnails[index], e[1].bgColor];
                 }
             }
         }
