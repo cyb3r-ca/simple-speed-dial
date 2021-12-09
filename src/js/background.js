@@ -31,28 +31,36 @@ let tripwireTimestamp = 0;
 const imageRatio = 1.54;
 
 function getSpeedDialId() {
-    browser.bookmarks.search({title: 'Speed Dial', url: undefined}).then(result => {
-        if (result.length && result[0]) {
-            speedDialId = result[0].id;
-            // get subfolder ids
-            browser.bookmarks.getChildren(speedDialId).then(results => {
-                for (let result of results) {
-                    if (!result.url && result.dateGroupModified) {
-                        folderIds.push(result.id);
+    return new Promise((resolve, reject) => {
+        browser.bookmarks.search({title: 'Speed Dial'}).then(result => {
+            if (result) {
+                for (let bookmark of result) {
+                    if (!bookmark.url) {
+                        speedDialId = bookmark.id;
+                        break;
                     }
                 }
-            })
-
-        } else {
-            browser.bookmarks.create({title: 'Speed Dial'}).then(result => {
-                speedDialId = result.id;
-            });
-        }
-        ready = true;
-        if (messagePorts.length && firstRun) {
-            firstRun = false;
-            messagePorts[0].postMessage({ready, cache, settings, speedDialId});
-        }
+            }
+            if (speedDialId) {
+                browser.bookmarks.getChildren(speedDialId).then(results => {
+                    for (let result of results) {
+                        if (!result.url && result.dateGroupModified) {
+                            folderIds.push(result.id);
+                        }
+                    }
+                })
+                resolve()
+            } else {
+                browser.bookmarks.create({title: 'Speed Dial'}).then(result => {
+                    speedDialId = result.id;
+                    resolve();
+                }, error => {
+                    reject(error);
+                });
+            }
+        }, error => {
+            reject(error)
+        });
     });
 }
 
@@ -476,7 +484,17 @@ function getBgColor(image) {
 }
 
 function removeBookmark(id, bookmarkInfo) {
-    if (bookmarkInfo.node.url && (bookmarkInfo.parentId === speedDialId || folderIds.indexOf(bookmarkInfo.parentId) !== -1)) {
+    if (id === speedDialId) {
+        // the speed dial folder was removed for some reason... refresh it
+        speedDialId = null;
+        getSpeedDialId().then(() => {
+            if (messagePorts.length) {
+               messagePorts[0].postMessage({reset:true, cache, speedDialId});
+            }
+        }, error => {
+            console.log(error);
+        });
+    } else if (bookmarkInfo.node.url && (bookmarkInfo.parentId === speedDialId || folderIds.indexOf(bookmarkInfo.parentId) !== -1)) {
         browser.storage.local.remove(bookmarkInfo.node.url).catch((err) => {
             console.log(err)
         });
@@ -526,8 +544,6 @@ function manualRefresh(url) {
     })
 }
 
-// todo: allow editing URLs from speed dial page
-// todo: something f'd up with getthumbnails
 function changeBookmark(id, info) {
     // info may only contain "changed" info -- ex. it may not contain url for moves, just old and new folder ids
     // so we always "get" the bookmark to access all its info
@@ -588,9 +604,12 @@ function changeBookmark(id, info) {
                     tripwireTimestamp = Date.now();
                 })
             }
-        } else {
-            // todo, handle yasd bookmarks that are moved outside of yasd but not deleted...
-            //console.log(bookmark[0], info)
+        } else if (bookmark[0] && bookmark[0].url && ( info.oldParentId === speedDialId || folderIds.indexOf(info.oldParentId) !== -1) ) {
+            // handle yasd bookmarks that are moved outside of yasd but not deleted
+            //console.log(bookmark, info)
+            browser.storage.local.remove(bookmark[0].url).catch((err) => {
+                console.log(err)
+            });
         }
     });
 }
@@ -669,7 +688,15 @@ function init() {
                 }
             }
         }
-        getSpeedDialId();
+        getSpeedDialId().then(() => {
+            ready = true;
+            if (messagePorts.length && firstRun) {
+                firstRun = false;
+                messagePorts[0].postMessage({ready, cache, settings, speedDialId});
+            }
+        }, error => {
+            console.log(error);
+        });
     });
 
     // context menu -> "add to speed dial"

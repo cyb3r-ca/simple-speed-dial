@@ -55,8 +55,11 @@ const textColor_picker = document.getElementById("textColor-picker");
 const textColor_picker_wrapper = document.getElementById("textColor-picker-wrapper");
 const imgInput = document.getElementById("file");
 const imgPreview = document.getElementById("preview");
+const previewOverlay = document.getElementById("previewOverlay");
+const switchesContainer = document.getElementById("switchesContainer");
 const wallPaperEnabled = document.getElementById("wallpaper");
 const previewContainer = document.getElementById("previewContainer");
+const backgroundColorContainer = document.getElementById("backgroundColorContainer");
 const largeTilesInput = document.getElementById("largeTiles");
 const scaleImagesInput = document.getElementById("scaleImages");
 const showTitlesInput = document.getElementById("showTitles");
@@ -67,6 +70,7 @@ const showSettingsBtnInput = document.getElementById("showSettingsBtn");
 const maxColsInput = document.getElementById("maxcols");
 const defaultSortInput = document.getElementById("defaultSort");
 //const saveBtn = document.getElementById("saveBtn");
+//const importBtn = document.getElementById("importBtn");
 //const settingsToast = document.getElementById("settingsToast");
 
 // clock
@@ -104,9 +108,11 @@ const debounce = (func, delay= 500, immediate=false) => {
         const args = arguments
         if (immediate && !inDebounce) {
             func.apply(context, args);
+            inDebounce = setTimeout(() => clearTimeout(inDebounce), delay)
+        } else {
+            clearTimeout(inDebounce)
+            inDebounce = setTimeout(() => func.apply(context, args), delay)
         }
-        clearTimeout(inDebounce)
-        inDebounce = setTimeout(() => func.apply(context, args), delay)
     }
 }
 
@@ -129,6 +135,8 @@ function getBookmarks(folderId) {
             addFolderButton.style.display = 'none';
         }
         printBookmarks(result, folderId)
+    }, error => {
+        console.log(error);
     });
 }
 
@@ -286,12 +294,16 @@ function createFolder() {
 function saveFolder() {
     let name = createFolderModalName.value.trim();
 
-    browser.bookmarks.create({
-        title: name,
-        parentId: speedDialId
-    }).then(node => {
+    if (name.length) {
+        browser.bookmarks.create({
+            title: name,
+            parentId: speedDialId
+        }).then(node => {
+            hideModals();
+        });
+    } else {
         hideModals();
-    });
+    }
 }
 
 function editFolder() {
@@ -514,6 +526,14 @@ function hideModals() {
     let modals = [modal, createDialModal, createFolderModal, editFolderModal, deleteFolderModal];
     let modalContents = [modalContent, createDialModalContent, createFolderModalContent, editFolderModalContent, deleteFolderModalContent]
 
+    for (let button of document.getElementsByTagName('button')) {
+        button.blur();
+    }
+
+    for (let input of document.getElementsByTagName('input')) {
+        input.blur();
+    }
+
     for (let el of modalContents) {
         el.style.transform = "scale(0.8)";
         el.style.opacity = "0";
@@ -696,12 +716,12 @@ function saveBookmarkSettings() {
                     thumbnails.push(selectedImageSrc);
                     thumbIndex = 0;
                 }
-                    browser.storage.local.set({[newUrl]: {thumbnails, thumbIndex, bgColor}}).then(result => {
-                        tabMessagePort.postMessage({updateCache: true, url: newUrl, i: thumbIndex});
-                        if (title !== targetTileTitle) {
-                            updateTitle()
-                        }
-                    });
+                browser.storage.local.set({[newUrl]: {thumbnails, thumbIndex, bgColor}}).then(result => {
+                    tabMessagePort.postMessage({updateCache: true, url: newUrl, i: thumbIndex});
+                    if (title !== targetTileTitle) {
+                        updateTitle()
+                    }
+                });
             });
     } else {
         for (let node of imageNodes) {
@@ -960,70 +980,6 @@ function addImage(image) {
     }
 }
 
-function hexToRgb(color) {
-    let colors = color.replace("#", "").match(/.{2}/g);
-    return colors.map(c => parseInt("0x" + c));
-}
-
-// given a color, return whether white or black has the most contrast
-// approximates w3c accessibility algorithm
-function contrast(rgb) {
-    let srgb = [];
-    rgb.forEach(function (c, i) {
-        c = c / 255;
-        if (c <= 0.03928) {
-            c = c / 12.92
-        } else {
-            c = Math.pow((c + 0.055) / 1.055, 2.4);
-        }
-        srgb[i] = c
-    });
-    let l = ((0.2126 * srgb[0]) + (0.7152 * srgb[1]) + (0.0722 * srgb[2]));
-    if (l > 0.179) {
-        return '#000000'
-    } else {
-        return '#ffffff'
-    }
-}
-
-function getAverageRGB(imgPath) {
-    return new Promise(function (resolve, reject) {
-        // todo: performance: use the bg preview image from the settings nav rather than using a constructor
-        let img = new Image();
-        img.onload = function () {
-            let blockSize = 5; // only visit every 5 pixels
-            let canvas = document.createElement('canvas');
-            let context = canvas.getContext && canvas.getContext('2d');
-            let data, width, height;
-            let i = -4;
-            let length;
-            let rgb = [0, 0, 0];
-            let count = 0;
-
-            height = canvas.height = img.naturalHeight || img.offsetHeight || img.height;
-            width = canvas.width = img.naturalWidth || img.offsetWidth || img.width;
-
-            context.drawImage(img, 0, 0);
-            data = context.getImageData(0, 0, width, height);
-            length = data.data.length;
-
-            while ((i += blockSize * 4) < length) {
-                ++count;
-                rgb[0] += data.data[i];
-                rgb[1] += data.data[i + 1];
-                rgb[2] += data.data[i + 2];
-            }
-
-            rgb[0] = ~~(rgb[0] / count);
-            rgb[1] = ~~(rgb[1] / count);
-            rgb[2] = ~~(rgb[2] / count);
-
-            resolve(rgb);
-        };
-        img.src = imgPath;
-    });
-}
-
 function applySettings() {
     return new Promise(function (resolve, reject) {
         // apply settings to speed dial
@@ -1109,11 +1065,19 @@ function applySettings() {
 
         if (settings.wallpaperSrc) {
             imgPreview.setAttribute('src', settings.wallpaperSrc);
-            imgPreview.style.display = 'block';
+            //imgPreview.style.display = 'block';
+            imgPreview.onload = function(e) {
+                if (settings.wallpaper) {
+                    previewContainer.style.opacity = '1';
+                    switchesContainer.style.transform = "translateY(0)";
+                    //backgroundColorContainer.style.display = 'none';
+                } else {
+                    previewContainer.style.opacity = '0';
+                    switchesContainer.style.transform = `translateY(-${previewContainer.offsetHeight}px)`;
+                }
+            }
         }
-        if (settings.wallpaper) {
-            previewContainer.style.display = 'flex';
-        }
+
 
     });
 }
@@ -1313,6 +1277,7 @@ modalImgInput.onchange = function () {
     });
 };
 
+
 maxColsInput.oninput = function(e) {
     saveSettings()
 }
@@ -1381,14 +1346,10 @@ imgInput.onchange = function () {
     readURL(this);
 };
 
+previewOverlay.onclick = function() {
+    imgInput.click();
+}
 
-wallPaperEnabled.onchange = function () {
-    if (this.checked) {
-        previewContainer.style.display = "flex";
-    } else {
-        previewContainer.style.display = "none";
-    }
-};
 
 // native handlers for folder tab target
 function dragenterHandler(ev) {
@@ -1420,7 +1381,7 @@ function dragleaveHandler(ev) {
     if (ev.target.nodeType === 3) {
         return
     }
-     else if (ev.target.classList.contains("folderTitle")) {
+    else if (ev.target.classList.contains("folderTitle")) {
         ev.target.style.padding = "0";
         ev.target.style.outline = "none";
     }
@@ -1533,6 +1494,11 @@ function init() {
             applySettings().then(() => getBookmarks(speedDialId));
         } else if (m.refresh) {
             cache = m.cache;
+            hideToast();
+            processRefresh();
+        } else if (m.reset) {
+            cache = m.cache;
+            speedDialId = m.speedDialId;
             hideToast();
             processRefresh();
         }
